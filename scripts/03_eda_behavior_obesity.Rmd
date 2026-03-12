@@ -1,0 +1,159 @@
+---
+title: "Exploratory Data Analysis: Adult Lifestyle and Obesity"
+author: "Brandon Wu"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+
+library(tidyverse)
+library(ggcorrplot)
+library(dplyr)
+```
+
+**Data Set Loading and Initial Checks**
+
+```{r}
+df <- read_csv("../data/cleaned/obesity_behavior_activity_only.csv")
+glimpse(df)
+```
+```{r}
+summary(df)
+```
+```{r}
+nrow(df)
+n_distinct(df$LocationDesc)
+n_distinct(df$YearStart)
+```
+
+The data set contains state-level behavioral indicators and obesity prevalence from 2011 to 2023. Each observation corresponds to a state-year pair and 
+reports the percentage of adults exhibiting specific lifestyle behaviors.
+
+**Distribution of Adult Obesity Prevalence**
+
+```{r}
+ggplot(df, aes(x = obesity)) +
+  geom_histogram(
+    bins = 25,
+    fill = "#0099F8",
+    color = "white"
+  ) +
+  labs(
+    title = "Distribution of State-Level Adult Obesity Prevalence",
+    x = "Adult Obesity Prevalence (%)",
+    y = "Number of State-Year Observations",
+    caption = "Each observation represents a state in a given year (2011–2023)."
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+The distribution of obesity prevalence across-state year observations is centered at roughly 30%. Most observed obesity rates fall within the 27% to 34% range, with few states exhibiting high or low prevalence. 
+
+The relatively narrow distribution suggests that differences in behavioral indicators may help explain variation in obesity prevalence across states.
+
+**Distribution of Adult Aerobic Activity Levels**
+
+```{r}
+ggplot(df, aes(aerobic_activity_150)) +
+  geom_histogram(
+    bins = 25,
+    fill = "#0099F8",
+    color = "white"
+  ) + 
+  labs(
+    title = "Distribution of Adults Meeting Recommended Aerobic Activity Levels",
+    x = "Adults Achieving >=150 Minutes of Aerobic Activity per Week (%)",
+    y = "Number of State-Year Obsevations",
+    caption = "The 150-minute threshold reflects the CDC’s recommended weekly aerobic activity level for adults."
+  ) + 
+  theme_minimal()
+```
+
+The distribution of adults meeting the recommended >=150 minutes of weekly aerobic activity is roughly centered around 50%, indicating that in most state-years approximately half of adults meet the CDC activity guideline. A small number of observations fall below 40%, suggesting that some states or years exhibit substantially lower physical activity levels.
+
+**Physical Inactivity and Adult Obesity Scatterplot**
+
+```{r}
+ggplot(df, aes(no_leisure_physical_activity, obesity)) +
+  geom_point(alpha = 0.5, size = 2) +
+  geom_smooth(method = "lm", se = FALSE, color = "#0072B2") +
+  labs(
+    title = "Relationship Between Physical Inactivity and Adult Obesity",
+    x = "Adults Reporting No Leisure-Time Physical Activity (%)",
+    y = "Adult Obesity Prevalence (%)",
+    caption = "Each point represents a state-year observation."
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+The scatter plot shows a positive relationship between physical inactivity and obesity prevalence. State-years with a higher percentage of adults reporting no leisure-time physical activity tend to have higher obesity rates as well.
+
+**Correlation Heat Map**
+
+```{r, fig.width=12, fig.height=6}
+corr_matrix <- df %>%
+  select(
+    obesity,
+    aerobic_activity_150,
+    muscle_strengthening_2plus,
+    no_leisure_physical_activity
+  ) %>%
+  rename(
+    "Obesity Prevalence" = obesity,
+    "Aerobic Activity >=150 min/week" = aerobic_activity_150,
+    "Muscle Strengthening >=2 days/week" = muscle_strengthening_2plus,
+    "No Leisure-Time Physical Activity" = no_leisure_physical_activity
+  ) %>%
+  cor()
+
+ggcorrplot(
+  corr_matrix,
+  lab = TRUE,
+  type = "lower",
+  colors = c("#B2182B", "white", "#2166AC")
+) +
+  labs(
+    title = "Correlation Between Behavioral Indicators and Obesity Prevalence",
+    x = NULL,
+    y = NULL
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+The correlation analysis shows that physical inactivity has the strongest positive association with obesity prevalence (r ≈ 0.52), suggesting that states with higher inactivity rates tend to have higher obesity levels. Aerobic activity shows a modest negative correlation with obesity (r ≈ -0.31), while muscle strengthening activities appear largely unrelated to obesity prevalence (r ≈ -0.04). Additionally, aerobic activity and muscle strengthening are strongly positively correlated (r ≈ 0.79), indicating that states with higher aerobic participation also tend to report higher rates of strength training.
+
+```{r}
+df_long <- df %>%
+  select(
+    obesity,
+    aerobic_activity_150,
+    muscle_strengthening_2plus,
+    no_leisure_physical_activity
+  ) %>%
+  pivot_longer(
+    cols = -obesity,
+    names_to = "behavior",
+    values_to = "value"
+  )
+
+ggplot(df_long, aes(value, obesity)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE, color = "#0072B2") +
+  facet_wrap(~behavior, scales = "free_x") +
+  labs(
+    title = "Relationships Between Behavioral Indicators and Obesity Prevalence",
+    x = "Behavioral Indicator (%)",
+    y = "Obesity Prevalence (%)"
+  ) +
+  theme_minimal()
+```
+
