@@ -1,0 +1,94 @@
+---
+title: "Initial Data Check"
+author: "Brandon Wu"
+date: "r Sys.Date()"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+
+library(tidyverse)
+```
+
+```{r}
+df <- read_csv("../data/raw/adult_obesity_behavior.csv", show_col_types = FALSE)
+```
+
+```{r}
+# Identify raw column names
+names(df)
+```
+
+```{r}
+# Inspect variable types and overall dataset structure
+glimpse(df)
+```
+
+```{r}
+# List survey questions included in the raw dataset
+df %>% count(Question, sort = TRUE)
+```
+
+```{r}
+# Check year range covered by raw dataset
+df %>%
+  summarise(
+    min_year = min(YearStart),
+    max_year = max(YearStart)
+  )
+```
+
+```{r}
+# Check for missing values in each raw-data column
+df %>%
+  summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(),
+               names_to = "column",
+               values_to = "missing_values") %>%                                  
+  arrange(desc(missing_values))
+```
+
+```{r}
+# Visualize missingness across behavioral indicators in the raw dataset
+df %>%
+  mutate(
+    missing = is.na(Data_Value),
+    Question_short = case_when(
+      Question == "Percent of adults aged 18 years and older who have obesity" ~ "Obesity",
+      Question == "Percent of adults aged 18 years and older who have an overweight classification" ~ "Overweight",
+      Question == "Percent of adults who engage in no leisure-time physical activity" ~ "No leisure activity",
+      Question == "Percent of adults who report consuming fruit less than one time daily" ~ "Fruit < 1/day",
+      Question == "Percent of adults who report consuming vegetables less than one time daily" ~ "Vegetables < 1/day",
+      Question == "Percent of adults who engage in muscle-strengthening activities on 2 or more days a week" ~ "Muscle strengthening",
+      str_detect(Question, "150 minutes") ~ "150 min activity",
+      str_detect(Question, "300 minutes") ~ "300 min activity",
+      TRUE ~ Question
+    )
+  ) %>%
+  group_by(Question_short) %>%
+  summarise(percent_missing = mean(missing) * 100) %>%
+  ggplot(aes(x = reorder(Question_short, percent_missing),
+             y = percent_missing)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    x = "Behavioral Indicator",
+    y = "Percent Missing",
+    title = "Missing Data by Behavioral Indicator"
+  )
+```
+
+```{r}
+# Restrict to total-population rows and check for duplicate state-year-question combinations
+df_total <- df %>%
+  filter(Total == "Total")
+
+df_total %>%
+  count(LocationDesc, YearStart, Question) %>%
+  filter(n > 1)
+```

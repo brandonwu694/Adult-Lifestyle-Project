@@ -1,0 +1,121 @@
+---
+title: "Data Cleaning and Dataset Formation"
+author: "Brandon Wu"
+date: "r Sys.Date()"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+
+library(tidyverse)
+```
+
+```{r}
+# Load the raw CDC obesity behavior dataset
+df <- read_csv("../data/raw/adult_obesity_behavior.csv", show_col_types = FALSE)
+```
+
+```{r}
+# Keep columns needed for modeling purposes only
+df_use <- df %>%
+  filter(Total == "Total") %>%
+  select(LocationDesc, YearStart, Question, Data_Value)
+```
+
+```{r}
+# Convert long-format survey responses into a wide dataset of behavioral indicators
+df_wide <- df_use %>%
+  pivot_wider(
+    names_from = Question,
+    values_from = Data_Value
+  )
+```
+
+```{r}
+# Replace long survey question text with shorter variable names
+df_wide <- df_wide %>%
+  rename(
+    obesity = `Percent of adults aged 18 years and older who have obesity`,
+    overweight = `Percent of adults aged 18 years and older who have an overweight classification`,
+    activity_150 = `Percent of adults who achieve at least 150 minutes a week of moderate-intensity aerobic physical activity or 75 minutes a week of vigorous-intensity aerobic activity (or an equivalent combination)`,
+    activity_150_strength = `Percent of adults who achieve at least 150 minutes a week of moderate-intensity aerobic physical activity or 75 minutes a week of vigorous-intensity aerobic physical activity (or an equivalent combination) and engage in muscle-strengthening activities on 2 or more days a week`,
+    activity_300 = `Percent of adults who achieve more than 300 minutes a week of moderate-intensity aerobic physical activity or 150 minutes a week of vigorous-intensity aerobic activity (or an equivalent combination)`,
+    muscle_strengthening = `Percent of adults who engage in muscle-strengthening activities on 2 or more days a week`,
+    no_leisure_activity = `Percent of adults who engage in no leisure-time physical activity`,
+    fruit_lt_1_per_day = `Percent of adults who report consuming fruit less than one time daily`,
+    vegetables_lt_1_per_day = `Percent of adults who report consuming vegetables less than one time daily`
+  )
+```
+
+
+```{r}
+# Inspect the wide-format dataset to verify structure and summary statistics
+glimpse(df_wide)
+dim(df_wide)
+summary(df_wide)
+```
+
+```{r}
+df_wide %>%
+  summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(),
+               names_to = "variable",
+               values_to = "missing") %>%
+  arrange(desc(missing))
+```
+
+```{r}
+# Count missing values for each variable in the wide-format dataset
+df_wide %>%
+  group_by(YearStart) %>%
+  summarise(
+    fruit_missing = sum(is.na(fruit_lt_1_per_day)),
+    activity_missing = sum(is.na(activity_150))
+  )
+```
+
+```{r}
+# Examine how missingness in diet and activity indicators varies by year
+df_wide %>%
+  mutate(
+    fruit_present = !is.na(fruit_lt_1_per_day),
+    activity_present = !is.na(activity_150)
+  ) %>%
+  group_by(YearStart) %>%
+  summarise(
+    fruit_rate = mean(fruit_present),
+    activity_rate = mean(activity_present)
+  )
+```
+
+```{r}
+# Remove rows where all behavioral indicators and obesity measures are missing
+df_final <- df_wide %>%
+  filter(
+    !if_all(
+      c(
+        obesity,
+        overweight,
+        activity_150,
+        activity_150_strength,
+        activity_300,
+        muscle_strengthening,
+        no_leisure_activity,
+        fruit_lt_1_per_day,
+        vegetables_lt_1_per_day
+      ),
+      is.na
+    )
+  )
+```
+
+```{r}
+# Save cleaned panel dataset for modeling
+write_csv(df_final, "../data/cleaned/adult_behavior_panel.csv")
+```
+
