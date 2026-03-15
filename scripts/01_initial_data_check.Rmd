@@ -23,7 +23,7 @@ names(df)
 ```
 
 ```{r}
-# Inspect variable types and overall data set structure
+# Inspect variable types and overall dataset structure
 glimpse(df)
 ```
 

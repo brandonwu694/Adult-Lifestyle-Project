@@ -16,9 +16,9 @@ library(ggcorrplot)
 
 ## Dataset Overview 
 
-The data set contains state-level behavioral health indicators related to obesity prevalence in the United States and its territories. Each observation represents a location-year combination and includes measures of obesity prevalence and several lifestyle indicators such as physical activity and dietary behaviors. 
+The dataset contains state-level behavioral health indicators related to obesity prevalence in the United States and its territories. Each observation represents a location-year combination and includes measures of obesity prevalence and several lifestyle indicators such as physical activity and dietary behaviors. 
 
-The goal of this EDA is to examine how behavioral factors in the data set relate to obesity prevalence.
+The goal of this EDA is to examine how behavioral factors in the dataset relate to obesity prevalence.
 
 ```{r}
 df <- read_csv("../data/cleaned/adult_behavior_panel.csv", show_col_types = FALSE)
@@ -84,7 +84,7 @@ Overall, obesity prevalence across location-year observations ranges roughly fro
 
 There was also meaningful variation across dietary indicators. The percentage of adults consuming fruit or vegetables once per day generally ranged from 30-50% for fruit and 15-25% for vegetables, which implies differing dietary habits across states and years. 
 
-Overall, the distributions suggest that lifestyle behaviors vary noticeably across the data set, providing useful variation for examining potential relationships with obesity prevalence. 
+Overall, the distributions suggest that lifestyle behaviors vary noticeably across the dataset, providing useful variation for examining potential relationships with obesity prevalence. 
 
 ## Relationship Between Physical Inactivity and Obesity
 
