@@ -1,8 +1,6 @@
 ---
 title: "Initial Data Check"
-author: "Brandon Wu"
-date: "r Sys.Date()"
-output: html_document
+output: github_document
 ---
 
 ```{r setup, include=FALSE}
@@ -25,7 +23,7 @@ names(df)
 ```
 
 ```{r}
-# Inspect variable types and overall dataset structure
+# Inspect variable types and overall data set structure
 glimpse(df)
 ```
 

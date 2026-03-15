@@ -1,0 +1,552 @@
+Model Building
+================
+
+## Overview of Models
+
+To examine the relationship between behavioral factors and obesity
+prevalence, a series of Bayesian linear regression models were fit with
+obesity prevalence (%) as the response. Each observation corresponds to
+a state-year pair.
+
+Because indicators were not collected during every survey year, separate
+models were were estimated for physical inactivity, physical activity,
+and dietary indicators in order to evaluate how each behavioral
+indicator relates to obesity prevalence.
+
+### Priors
+
+Weakly informative priors were used to stabilize computations and guide
+parameters toward realistic ranges, while allowing data to dominate the
+posterior inference.
+
+The priors used are:
+
+$\beta_j$ ~ $N(0, 10)$
+
+$\sigma$ ~ $Exp(1)$
+
+### Posterior Inference
+
+Posterior distributions of the model parameters were estimated using
+Markov Chain Monte Carlo (MCMC) sampling via Stan. Convergence
+diagnostics and posterior predictive checks were used to assess model
+fit and ensure that the models adequately captured patterns in the
+observed data.
+
+## Inactivity Model
+
+``` r
+df <- read_csv("../data/cleaned/adult_behavior_panel.csv", show_col_types = FALSE)
+```
+
+$obesity_{ij} = \beta_0 + \beta_1 inactive_{ij} + \beta_2 year_j + b_{state[i]} + \epsilon_{ij}$
+
+Where $i$ = state and $j$ = year
+
+$\beta_0$: Intercept representing the expected obesity prevalence when
+predictors are at their mean values
+
+$\beta_1$: Change in obesity prevalence associated with a one standard
+deviation increase in the rate of no leisure-time physical activity
+
+$\beta_2$: Association between survey year and obesity prevalence,
+capturing overall temporal trends
+
+$b_{state[i]}$: State-level random intercept capturing unobserved
+differences in baseline obesity prevalence across states
+
+``` r
+# Prepare data for inactivity model and standardize predictors
+df_inactive <- df %>%
+  select(LocationDesc, YearStart, obesity, no_leisure_activity) %>%
+  drop_na() %>%
+  mutate(
+    year_z = as.numeric(scale(YearStart)),
+    inactive_z = as.numeric(scale(no_leisure_activity))
+  )
+```
+
+``` r
+# Fit hierarchical Bayesian regression with state-level random intercepts
+fit_inactive <- stan_glmer(
+  obesity ~ inactive_z + year_z + (1 | LocationDesc),
+  data = df_inactive,
+  family = gaussian(),
+  prior_intercept = normal(30, 10, autoscale = FALSE),
+  prior = normal(0, 2, autoscale = FALSE),
+  prior_aux = exponential(1, autoscale = FALSE),
+  chains = 4,
+  iter = 4000,
+  seed = 84375,
+  refresh = 0
+)
+```
+
+``` r
+# Extract fixed-effect posterior estimates and 95% credible intervals
+broom.mixed::tidy(fit_inactive, effects = "fixed", conf.int = TRUE)
+```
+
+    ## # A tibble: 3 × 5
+    ##   term        estimate std.error conf.low conf.high
+    ##   <chr>          <dbl>     <dbl>    <dbl>     <dbl>
+    ## 1 (Intercept)   31.0      0.461   30.2       31.8  
+    ## 2 inactive_z     0.244    0.108    0.0702     0.420
+    ## 3 year_z         2.17     0.0424   2.10       2.24
+
+The posterior mean for the no leisure-time physical inactivity
+coefficient is approximately 0.24 with a 95% credible interval of
+roughly \[0.07, 0.42\], which does not include 0. This suggests evidence
+of a positive association between the proportion of adults reporting no
+leisure-time physical activity and obesity prevalence.
+
+Additionally, the coefficient for year is also positive with a posterior
+mean of around 2.17 and a 95% credible interval of around \[2.10,
+2.24\], indicating that obesity prevalence tends to increase over time
+across states.
+
+``` r
+# Compute posterior probability that inactivity is positively associated with obesity
+post <- as.matrix(fit_inactive)
+mean(post[, "inactive_z"] > 0)
+```
+
+    ## [1] 0.988875
+
+The posterior probability that the no leisure-time physical inactivity
+coefficient is positive is around 0.99, indicating strong evidence that
+higher inactivity rates are associated with higher obesity prevalence.
+
+``` r
+# Posterior predictive check comparing observed and simulated obesity distributions
+pp_check(fit_inactive, plotfun = "dens_overlay")
+```
+
+![](04_model_building_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
+
+The simulated density curves closely overlap the observed density,
+suggesting that the inactivity model captures the overall distribution
+of obesity prevalence fairly well.
+
+``` r
+# Generate posterior predictions for -1 SD and +1 SD inactivity levels
+new_data <- tibble(
+  LocationDesc = "National",
+  year_z = 0,
+  inactive_z = c(-1, 1)
+)
+
+pred <- posterior_epred(fit_inactive, newdata = new_data)
+
+# Compute posterior mean predicted obesity prevalence
+apply(pred, 2, mean)
+```
+
+    ##        1        2 
+    ## 30.31258 30.80159
+
+``` r
+# Compute 95% credible intervals for predicted obesity prevalence
+apply(pred, 2, quantile, probs = c(.025, .975))
+```
+
+    ##        
+    ##                1       2
+    ##   2.5%  29.69963 30.1945
+    ##   97.5% 30.92622 31.4070
+
+Posterior predictions were generated for inactivity levels one standard
+deviation above and below the mean, while holding the standardized year
+variable at 0. The model predicts an average obesity prevalence of
+approximately 30.3% when inactivity is one standard deviation below the
+mean and roughly 30.8% when inactivity is one standard deviation above
+the mean.
+
+## Activity Model
+
+$obesity_ij$ ~
+$\beta_0 + \beta_1 * activity150_{ij} + \beta_2 * strength_{ij} + \beta_3 * year_j + b_{state[i]} + \epsilon_i$
+
+Where $i$ = state and $j$ = year
+
+$\beta_0$: Intercept representing the expected obesity prevalence when
+predictors are at their mean values
+
+$\beta_1$: Association between meeting the 150-minute activity guideline
+and obesity prevalence
+
+$\beta_2$: Association between muscle-strengthening activity
+participation and obesity prevalence
+
+$\beta_3$: Association between survey year and obesity prevalence,
+capturing overall temporal trends
+
+$b_{state[i]}$: State-level random intercept capturing unobserved
+differences in baseline obesity prevalence across states.
+
+``` r
+# Prepare data for activity model and standardize predictors
+df_activity <- df %>%
+  select(LocationDesc, YearStart, obesity, activity_150, muscle_strengthening) %>%
+  drop_na() %>%
+  mutate(
+    year_z = as.numeric(scale(YearStart)),
+    activity150_z = as.numeric(scale(activity_150)),
+    strength_z = as.numeric(scale(muscle_strengthening))
+  )
+```
+
+``` r
+# Fit hierarchical Bayesian regression including aerobic activity and muscle strengthening
+fit_activity <- stan_glmer(
+  obesity ~ activity150_z + strength_z + year_z + (1 | LocationDesc),
+  data = df_activity,
+  family = gaussian(),
+  prior_intercept = normal(30, 10, autoscale = FALSE),
+  prior = normal(0, 2, autoscale = FALSE),
+  prior_aux = exponential(1, autoscale = FALSE),
+  chains = 4,
+  iter = 4000,
+  seed = 84375,
+  refresh = 0
+)
+```
+
+``` r
+# Extract posterior estimates and 95% credible intervals for fixed effects
+broom.mixed::tidy(fit_activity, effects = "fixed", conf.int = TRUE)
+```
+
+    ## # A tibble: 4 × 5
+    ##   term          estimate std.error conf.low conf.high
+    ##   <chr>            <dbl>     <dbl>    <dbl>     <dbl>
+    ## 1 (Intercept)     30.3       0.467   29.6     31.1   
+    ## 2 activity150_z   -0.312     0.159   -0.583   -0.0424
+    ## 3 strength_z       0.162     0.207   -0.164    0.491 
+    ## 4 year_z           2.05      0.125    1.85     2.26
+
+The coefficient for meeting the 150-minute physical activity guideline
+is negative, with a posterior mean of around -0.311 and a 95% credible
+interval of \[-0.58, -0.04\], which excludes 0. This suggests higher
+rates of aerobic activity participation are associated with lower
+obesity.
+
+The coefficient for muscle-strengthening activity has a posterior mean
+of 0.16 but the 95% credible interval \[-0.16, 0.49\] contains 0, which
+indicates that the relationship between muscle-strengthening activities
+and obesity prevalence is uncertain in this model.
+
+Similar to the inactivity model, the year coefficient is positive with a
+mean of around 2.05 and 95% credible interval of \[1.85, 2.26\],
+suggesting that obesity prevalence has increased over time across
+states.
+
+``` r
+# Compute posterior probabilities that activity predictors reduce obesity prevalence
+post_activity <- as.matrix(fit_activity)
+
+mean(post_activity[, "activity150_z"] < 0)
+```
+
+    ## [1] 0.971875
+
+``` r
+mean(post_activity[, "strength_z"] < 0)
+```
+
+    ## [1] 0.207125
+
+The posterior probability that the coefficient for aerobic activity
+participation is negative is roughly 0.97, indicating strong evidence
+that higher activity levels are associated with lower obesity
+prevalence.
+
+On the other hand, the posterior probability that the
+muscle-strengthening coefficient is negative is approximately 0.21,
+suggesting weak evidence that muscle-strengthening participation reduces
+obesity prevalence in this model.
+
+``` r
+# Posterior predictive check comparing observed and simulated obesity distributions
+pp_check(fit_activity, plotfun = "dens_overlay")
+```
+
+![](04_model_building_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
+
+The simulated density curves closely overlap the observed density,
+suggesting that the activity model captures the overall distribution of
+obesity prevalence fairly well.
+
+``` r
+# Generate posterior predictions for -1 SD and +1 SD activity levels
+new_data_activity <- tibble(
+  LocationDesc = "National",
+  year_z = 0,
+  activity150_z = c(-1, -1,  1,  1),
+  strength_z    = c(-1,  1, -1,  1)
+)
+
+pred_activity <- posterior_epred(fit_activity, newdata = new_data_activity)
+
+# Compute posterior mean predicted obesity prevalence
+apply(pred_activity, 2, mean)
+```
+
+    ##        1        2        3        4 
+    ## 29.97502 30.30406 29.35003 29.67906
+
+``` r
+# Compute 95% credible intervals for predicted obesity prevalence
+apply(pred_activity, 2, quantile, probs = c(.025, .975))
+```
+
+    ##        
+    ##                1        2        3        4
+    ##   2.5%  29.06343 29.25969 28.26116 28.78580
+    ##   97.5% 30.87504 31.31561 30.42037 30.56057
+
+Posterior predictions were generated for combinations of aerobic
+activity and muscle-strengthening participation one standard deviation
+above and below, while holding the standardized year variable at 0.
+
+The model predicts the lowest obesity prevalence to at around 29.35%
+when aerobic activity levels are high and strength training
+participation participation is low. In contrast, obesity prevalence was
+projected to be 30.3% when aerobic activity levels are low and strength
+training participation is high.
+
+These results suggest that higher aerobic activity participation is
+associated with lower obesity prevalence, while the effect of
+muscle-strengthening activity appears weaker and more uncertain.
+
+# Nutrition Model
+
+$obesity_{ij} = \beta_0 + \beta_1 fruit_{ij} + \beta_2 veg_{ij} + \beta_3 year_j + b_{state[i]} + \epsilon_{ij}$
+
+Where $i$ = state and $j$ = year
+
+$\beta_0$: Intercept representing the expected obesity prevalence when
+predictors are at their mean values
+
+$\beta_1$: Change in obesity prevalence associated with a one standard
+deviation increase in the proportion of adults consuming fruit less than
+one time per day
+
+$\beta_2$: Change in obesity prevalence associated with a one standard
+deviation increase in the proportion of adults consuming vegetables less
+than one time per day
+
+$\beta_3$: Association between survey year and obesity prevalence,
+capturing overall temporal trends
+
+$b_{state[i]}$: State-level random intercept capturing unobserved
+differences in baseline obesity prevalence across states
+
+``` r
+# Prepare data for nutrition model and standardize dietary predictors
+df_nutrition <- df %>%
+  select(LocationDesc, YearStart, obesity, fruit_lt_1_per_day, vegetables_lt_1_per_day) %>%
+  drop_na() %>%
+  mutate(
+    year_z = as.numeric(scale(YearStart)),
+    fruit_z = as.numeric(scale(fruit_lt_1_per_day)),
+    veg_z = as.numeric(scale(vegetables_lt_1_per_day))
+  )
+```
+
+``` r
+# Fit hierarchical Bayesian regression relating dietary indicators to obesity prevalence
+fit_nutrition <- stan_glmer(
+  obesity ~ fruit_z + veg_z + year_z + (1 | LocationDesc),
+  data = df_nutrition,
+  family = gaussian(),
+  prior_intercept = normal(30, 10, autoscale = FALSE),
+  prior = normal(0, 2, autoscale = FALSE),
+  prior_aux = exponential(1, autoscale = FALSE),
+  chains = 4,
+  iter = 4000,
+  seed = 84375,
+  refresh = 0
+)
+```
+
+``` r
+# Extract posterior estimates and 95% credible intervals for dietary predictors
+broom.mixed::tidy(fit_nutrition, effects = "fixed", conf.int = TRUE)
+```
+
+    ## # A tibble: 4 × 5
+    ##   term        estimate std.error conf.low conf.high
+    ##   <chr>          <dbl>     <dbl>    <dbl>     <dbl>
+    ## 1 (Intercept)   32.1       0.418   31.4      32.8  
+    ## 2 fruit_z        1.17      0.375    0.548     1.78 
+    ## 3 veg_z          0.147     0.348   -0.424     0.745
+    ## 4 year_z         0.720     0.141    0.487     0.957
+
+The posterior estimate suggests that lower fruit consumption is
+positively associated with higher obesity prevalence. The coefficient
+for fruit consumption \< 1/day has a posterior mean of approximately
+1.17 and a 95% credible interval of roughly \[0.55, 1.78\], which does
+not contain 0. This indicates that lower fruit consumption is associated
+with a higher obesity prevalence.
+
+The posterior mean of vegetable consumption \< 1/day has a posterior
+mean of 0.15, but its 95% credible interval of approximately \[-0.42,
+0.75\] contains 0, suggesting that the relationship between low
+vegetable consumption and obesity prevalence is more uncertain.
+
+Similar to the previous two models, the coefficient for year has a
+posterior mean of 0.72 and a 95% credible interval of \[0.49, 0.96\],
+suggesting that obesity prevalence tends to increase over time across
+states.
+
+``` r
+# Compute posterior probabilities that poorer dietary indicators are associated with higher obesity prevalence
+post_nutrition <- as.matrix(fit_nutrition)
+
+mean(post_nutrition[, "fruit_z"] > 0)
+```
+
+    ## [1] 0.99875
+
+``` r
+mean(post_nutrition[, "veg_z"] > 0)
+```
+
+    ## [1] 0.660875
+
+The posterior probability that the coefficient for fruit consumption \<
+1/day being posttive is roughly 0.999, indicating very strong evidence
+that higher rates of consuming fruit \< 1/day are associated with a
+higher obesity prevalence.
+
+On the other hand, the posterior probability that the coefficient for
+vegetable consumption \< 1/day being positive is 0.66, which provides
+weak evidence that higher rates of consuming vegetables \< 1/day are
+associated with a higher obesity prevalence.
+
+``` r
+# Posterior predictive check comparing observed and simulated obesity distributions
+pp_check(fit_nutrition, plotfun = "dens_overlay")
+```
+
+![](04_model_building_files/figure-gfm/unnamed-chunk-18-1.png)<!-- -->
+
+The simulated density curves closely overlap the observed density,
+suggesting that the nutrition model captures the overall distribution of
+obesity prevalence fairly well.
+
+``` r
+# Generate posterior predictions for combinations of fruit and vegetable consumption levels
+new_data_nutrition <- tibble(
+  LocationDesc = "National",
+  year_z = 0,
+  fruit_z = c(-1, -1, 1, 1),
+  veg_z = c(-1, 1, -1, 1)
+)
+
+pred_nutrition <- posterior_epred(fit_nutrition, newdata = new_data_nutrition)
+
+apply(pred_nutrition, 2, mean)
+```
+
+    ##        1        2        3        4 
+    ## 30.44342 30.74801 32.76730 33.07190
+
+``` r
+apply(pred_nutrition, 2, quantile, probs = c(.025, .975))
+```
+
+    ##        
+    ##                1        2        3        4
+    ##   2.5%  28.95326 29.07600 30.92532 31.53161
+    ##   97.5% 31.90286 32.43905 34.67713 34.64018
+
+Posterior predictions were generated for combinations of fruit and
+vegetable consumption one standard deviation above and below the mean,
+while holding the standardized year variable at 0.
+
+Obesity prevalence was projected to at 30.44% when both vegetable and
+fruit consumption were high (lower percentage of adults consuming fruits
+and vegetables \< 1/day).
+
+When both fruit and vegetable consumption were lower, obesity prevalence
+was predicted to be roughly 33.07%.
+
+Overall, these results show that poorer dietary habits, especially lower
+fruit consumption, are associated with a higher obesity prevalence.
+
+## Comparing Behavioral Predictors Across Models
+
+``` r
+# Extract posterior estimates and credible intervals from each model
+coef_inactive <- tidy(fit_inactive, effects = "fixed", conf.int = TRUE)
+coef_activity <- tidy(fit_activity, effects = "fixed", conf.int = TRUE)
+coef_nutrition <- tidy(fit_nutrition, effects = "fixed", conf.int = TRUE)
+
+# Label coefficients by model type
+coef_inactive$model <- "Inactivity"
+coef_activity$model <- "Activity"
+coef_nutrition$model <- "Nutrition"
+
+# Combine results across models
+coef_all <- bind_rows(coef_inactive, coef_activity, coef_nutrition)
+
+# Remove intercept and year terms to focus on behavioral predictors
+coef_all <- coef_all %>%
+  filter(!term %in% c("(Intercept)", "year_z"))
+
+# Replace variable names with more concise labels for plotting
+coef_all$term <- recode(coef_all$term,
+  activity150_z = "Aerobic activity",
+  strength_z = "Muscle strengthening",
+  inactive_z = "No leisure activity",
+  fruit_z = "Low fruit consumption",
+  veg_z = "Low vegetable consumption"
+)
+
+# Plot posterior estimates and 95% credible intervals across models
+ggplot(coef_all, aes(x = estimate, y = term)) +
+  geom_point(size = 2) +
+  geom_errorbarh(aes(xmin = conf.low, xmax = conf.high), height = 0.2) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  facet_wrap(~model, scales = "free_y") +
+  labs(
+    title = "Posterior Estimates of Behavioral Predictors on Obesity",
+    x = "Estimated Effect on Obesity Prevalence (95% Credible Interval)",
+    y = NULL
+  ) +
+  theme_minimal()
+```
+
+![](04_model_building_files/figure-gfm/unnamed-chunk-20-1.png)<!-- -->
+
+The figure summarizes posterior estimates and 95% credible intervals for
+behavioral predictors across, nutrition, activity, and inactivity. The
+points represent estimated posterior means of each predictor, horizontal
+lines represent the 95% credible interval, and the dashed vertical lines
+at 0 represent no association with obesity prevalence.
+
+Overall, the results show that aerobic activity is negatively associated
+with obesity prevalence, while lower fruit consumption and no physical
+activity during leisure time are positively associated with obesity
+prevalence. In contrast, predictors such as muscle strengthening
+activity and low vegetable consumption contain 0 in their credible
+intervals, which suggest weaker or more uncertain associations with
+obesity prevalence.
+
+## Conclusion
+
+**What behavioral factors are posteriorly associated with obesity
+prevalence, including physical activity, sedentary behavior, and
+nutrition?**
+
+The posterior results suggest that several behavioral factors are
+associated with obesity prevalence. Higher rates of leisure time
+inactivity and lower fruit consumption were positively associated with
+obesity prevalence. On the other hand, higher rates of aerobic activity
+were negatively associated with obesity prevalence.
+
+Factors such as muscle strengthening and vegetable consumption were more
+uncertain, providing limited evidence limited evidence for a clear
+association between obesity prevalence.
