@@ -19,6 +19,23 @@ To reproduce the analysis:
 
 `data/raw`
 
+## Project Structure
+
+```
+.
+├── adult_lifestyle.Rproj
+├── README.md
+├── data
+│   ├── raw/        # downloaded BRFSS dataset
+│   └── cleaned/    # processed datasets used for analysis
+└── scripts
+    ├── 01_initial_data_check.Rmd
+    ├── 02_create_dataset.Rmd
+    ├── 03_eda.Rmd
+    ├── 04_model_building.Rmd
+    └── rendered .md reports
+```
+
 ## Analysis Workflow
 
 The analysis is organized into 4 reports:
