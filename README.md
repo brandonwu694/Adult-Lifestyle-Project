@@ -24,10 +24,11 @@ To reproduce the analysis:
 ```
 .
 ├── adult_lifestyle.Rproj
-├── README.md
 ├── data
-│   ├── raw/        # downloaded BRFSS dataset
-│   └── cleaned/    # processed datasets used for analysis
+│   ├── cleaned/ # processed datasets used for analysis 
+│   └── raw/ # downloaded BRFSS dataset
+├── question4.Rmd
+├── README.md
 └── scripts
     ├── 01_initial_data_check.Rmd
     ├── 02_create_dataset.Rmd
@@ -51,3 +52,7 @@ The analysis is organized into 4 reports:
 2. [Dataset Formation](scripts/02_create_dataset.md)
 3. [Exploratory Data Analysis](scripts/03_eda.md)
 4. [Model Building and Conclusion](scripts/04_model_building.md)
+
+## Project Summary
+
+[Summary of the entire analysis](question4.md)
